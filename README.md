@@ -20,11 +20,11 @@
 https://github.com/RobotKSR/solar-hermes-company/releases/latest
 ```
 
-Это отдельное окно-чата:
+Это пошаговое приложение:
 
 1. Вставьте LLM Platform API token.
-2. Нажмите `Install / Update`.
-3. Пишите сообщения в поле внизу.
+2. Дождитесь установки Hermes + Headroom.
+3. Перейдите на отдельный экран чата и пишите сообщения.
 
 Приложение само ставит/обновляет Hermes + Headroom и отправляет сообщения в Hermes через локальную команду:
 
@@ -32,7 +32,9 @@ https://github.com/RobotKSR/solar-hermes-company/releases/latest
 solar-hermes --oneshot "<message>" --continue SolarHermesGUI
 ```
 
-Ответ появляется прямо в окне приложения, отдельный PowerShell-чат не открывается.
+Ответ появляется прямо в окне приложения, отдельный PowerShell-чат и консольные окна не открываются.
+
+Если раньше была ошибка `hermes: headroom executable not found`, скачайте свежий `SolarHermes.exe` и нажмите установку заново. Новый установщик проверяет установку `headroom-ai`, ищет `headroom.exe/headroom.cmd/headroom.ps1`, а если entrypoint не создан, запускает Headroom через `python -m headroom.cli`.
 
 ### macOS / Linux
 

@@ -85,7 +85,17 @@ if (-not (Test-Path $HermesPython)) {
 
 Write-Host "Installing Headroom into Hermes environment..."
 & $HermesPython -m pip install --upgrade pip | Out-Null
+if ($LASTEXITCODE -ne 0) {
+    throw "pip upgrade failed in Hermes environment."
+}
 & $HermesPython -m pip install --upgrade "headroom-ai[proxy,mcp]" | Out-Null
+if ($LASTEXITCODE -ne 0) {
+    throw "Headroom install failed in Hermes environment."
+}
+& $HermesPython -c "import headroom.cli" | Out-Null
+if ($LASTEXITCODE -ne 0) {
+    throw "Headroom Python package is installed incorrectly: cannot import headroom.cli."
+}
 
 $EnvPath = Join-Path $HermesHome ".env"
 $ConfigPath = Join-Path $HermesHome "config.yaml"
@@ -162,10 +172,23 @@ Get-Content "`$env:HERMES_HOME\.env" | ForEach-Object {
     }
 }
 `$Port = if (`$env:HEADROOM_PORT) { `$env:HEADROOM_PORT } else { "$HeadroomPort" }
-`$Headroom = Join-Path "`$env:HERMES_HOME" "hermes-agent\venv\Scripts\headroom.exe"
+`$HermesPython = Join-Path "`$env:HERMES_HOME" "hermes-agent\venv\Scripts\python.exe"
 `$Hermes = Join-Path "`$env:HERMES_HOME" "hermes-agent\venv\Scripts\hermes.exe"
-if (-not (Test-Path `$Headroom)) {
-    throw "Headroom executable not found: `$Headroom"
+function Resolve-HeadroomLaunch {
+    `$ScriptsDir = Join-Path "`$env:HERMES_HOME" "hermes-agent\venv\Scripts"
+    foreach (`$Name in @("headroom.exe", "headroom.cmd", "headroom.ps1", "headroom")) {
+        `$Candidate = Join-Path `$ScriptsDir `$Name
+        if (Test-Path `$Candidate) {
+            return @{ File = `$Candidate; Args = @() }
+        }
+    }
+    if (Test-Path `$HermesPython) {
+        & `$HermesPython -c "import headroom.cli" | Out-Null
+        if (`$LASTEXITCODE -eq 0) {
+            return @{ File = `$HermesPython; Args = @("-m", "headroom.cli") }
+        }
+    }
+    throw "Headroom executable not found and python -m headroom.cli is unavailable. Re-run Install / Update."
 }
 if (-not (Test-Path `$Hermes)) {
     `$HermesCommand = Get-Command hermes -ErrorAction SilentlyContinue
@@ -181,7 +204,9 @@ try {
 }
 catch {
     New-Item -ItemType Directory -Force -Path (Join-Path "`$env:HERMES_HOME" "logs") | Out-Null
-    Start-Process -FilePath `$Headroom -ArgumentList @("proxy","--host","127.0.0.1","--port",`$Port,"--openai-api-url","$LlmPublicBaseUrl") -WindowStyle Hidden
+    `$HeadroomLaunch = Resolve-HeadroomLaunch
+    `$HeadroomArgs = @() + `$HeadroomLaunch.Args + @("proxy","--host","127.0.0.1","--port",`$Port,"--openai-api-url","$LlmPublicBaseUrl")
+    Start-Process -FilePath `$HeadroomLaunch.File -ArgumentList `$HeadroomArgs -WindowStyle Hidden
     Start-Sleep -Seconds 3
 }
 & `$Hermes @args
