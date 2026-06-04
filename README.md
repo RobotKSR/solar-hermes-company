@@ -12,6 +12,28 @@
 
 ## One-Line Install
 
+## Windows EXE App
+
+Для пользователей Windows можно скачать `SolarHermes.exe` из GitHub Releases:
+
+```text
+https://github.com/RobotKSR/solar-hermes-company/releases/latest
+```
+
+Это отдельное окно-чата:
+
+1. Вставьте LLM Platform API token.
+2. Нажмите `Install / Update`.
+3. Пишите сообщения в поле внизу.
+
+Приложение само ставит/обновляет Hermes + Headroom и отправляет сообщения в Hermes через локальную команду:
+
+```text
+solar-hermes --oneshot "<message>" --continue SolarHermesGUI
+```
+
+Ответ появляется прямо в окне приложения, отдельный PowerShell-чат не открывается.
+
 ### macOS / Linux
 
 ```bash
