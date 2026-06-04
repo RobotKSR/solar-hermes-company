@@ -12,7 +12,6 @@ from tkinter import messagebox, scrolledtext
 
 INSTALLER_URL = "https://raw.githubusercontent.com/RobotKSR/solar-hermes-company/main/install.ps1"
 APP_TITLE = "Solar Hermes"
-SESSION_NAME = "SolarHermesGUI"
 
 
 def user_home() -> Path:
@@ -424,8 +423,6 @@ class SolarHermesApp(tk.Tk):
             "chat",
             "--query",
             message,
-            "--continue",
-            SESSION_NAME,
             "--quiet",
         ]
         try:

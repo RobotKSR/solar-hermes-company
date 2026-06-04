@@ -29,7 +29,7 @@ https://github.com/RobotKSR/solar-hermes-company/releases/latest
 Приложение само ставит/обновляет Hermes + Headroom и отправляет сообщения в Hermes через локальную команду:
 
 ```text
-solar-hermes chat --query "<message>" --continue SolarHermesGUI --quiet
+solar-hermes chat --query "<message>" --quiet
 ```
 
 Ответ появляется прямо в окне приложения, отдельный PowerShell-чат и консольные окна не открываются.
