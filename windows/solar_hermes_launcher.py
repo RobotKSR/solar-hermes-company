@@ -339,7 +339,7 @@ class SolarHermesApp(tk.Tk):
         for line in process.stdout:
             self.ui_queue.put(("install_detail", line))
             lowered = line.lower()
-            if "installing headroom" in lowered:
+            if "ensuring pip" in lowered or "installing headroom" in lowered:
                 self.ui_queue.put(("install_stage", "headroom"))
             elif "patching hermes" in lowered or "config.yaml" in lowered:
                 self.ui_queue.put(("install_stage", "config"))

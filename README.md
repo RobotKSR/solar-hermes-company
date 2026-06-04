@@ -34,7 +34,7 @@ solar-hermes --oneshot "<message>" --continue SolarHermesGUI
 
 Ответ появляется прямо в окне приложения, отдельный PowerShell-чат и консольные окна не открываются.
 
-Если раньше была ошибка `hermes: headroom executable not found`, скачайте свежий `SolarHermes.exe` и нажмите установку заново. Новый установщик проверяет установку `headroom-ai`, ищет `headroom.exe/headroom.cmd/headroom.ps1`, а если entrypoint не создан, запускает Headroom через `python -m headroom.cli`.
+Если раньше была ошибка `hermes: headroom executable not found`, скачайте свежий `SolarHermes.exe` и нажмите установку заново. Новый установщик сам bootstrap-ит `pip` внутри Hermes venv (`ensurepip`, затем fallback `get-pip.py`), проверяет установку `headroom-ai`, ищет `headroom.exe/headroom.cmd/headroom.ps1`, а если entrypoint не создан, запускает Headroom через `python -m headroom.cli`.
 
 ### macOS / Linux
 
@@ -54,7 +54,7 @@ irm https://raw.githubusercontent.com/RobotKSR/solar-hermes-company/main/install
 solar-hermes
 ```
 
-На Windows, если команда сразу не найдена, откройте новый PowerShell или запустите:
+На Windows установщик обновляет `PATH` внутри текущего процесса, поэтому перезапуск PowerShell не нужен. Если команда всё равно не найдена, запустите абсолютный путь:
 
 ```powershell
 %USERPROFILE%\.solar-hermes\bin\solar-hermes.cmd

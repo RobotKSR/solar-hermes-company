@@ -16,6 +16,23 @@ $SolarHome = Join-Path $HOME ".solar-hermes"
 $BinDir = Join-Path $SolarHome "bin"
 New-Item -ItemType Directory -Force -Path $SolarHome, $BinDir | Out-Null
 
+function Sync-ProcessPath {
+    $Parts = @()
+    $MachinePath = [Environment]::GetEnvironmentVariable("Path", "Machine")
+    $UserPath = [Environment]::GetEnvironmentVariable("Path", "User")
+    if ($MachinePath) {
+        $Parts += $MachinePath
+    }
+    if ($UserPath) {
+        $Parts += $UserPath
+    }
+    if ($Parts.Count -gt 0) {
+        $env:Path = ($Parts -join ";")
+    }
+}
+
+Sync-ProcessPath
+
 $Token = $env:LLM_PLATFORM_TOKEN
 if (-not $Token) {
     Write-Host "Paste your LLM Platform API token for $LlmModel."
@@ -41,11 +58,18 @@ if (-not (Get-Command hermes -ErrorAction SilentlyContinue)) {
         -OutFile $HermesInstaller
     try {
         & powershell -ExecutionPolicy Bypass -File $HermesInstaller -SkipSetup -NoPlaywright -NonInteractive
+        if ($LASTEXITCODE -ne 0) {
+            throw "Hermes installer exited with code $LASTEXITCODE"
+        }
     }
     catch {
         Write-Warning "Non-interactive Hermes install failed, retrying default installer: $_"
         & powershell -ExecutionPolicy Bypass -File $HermesInstaller
+        if ($LASTEXITCODE -ne 0) {
+            throw "Hermes installer exited with code $LASTEXITCODE"
+        }
     }
+    Sync-ProcessPath
 }
 
 function Resolve-HermesHome {
@@ -80,8 +104,40 @@ $env:HERMES_HOME = $HermesHome
 
 $HermesPython = Join-Path $HermesHome "hermes-agent\venv\Scripts\python.exe"
 if (-not (Test-Path $HermesPython)) {
-    throw "Hermes Python venv not found at $HermesPython. Detected Hermes home: $HermesHome. Open a new PowerShell and rerun installer."
+    throw "Hermes Python venv not found at $HermesPython. Detected Hermes home: $HermesHome. Re-run Install / Update from SolarHermes.exe."
 }
+
+function Ensure-HermesPip {
+    Write-Host "Ensuring pip in Hermes environment..."
+
+    & $HermesPython -m pip --version | Out-Null
+    if ($LASTEXITCODE -eq 0) {
+        return
+    }
+
+    & $HermesPython -m ensurepip --upgrade | Out-Null
+    if ($LASTEXITCODE -eq 0) {
+        & $HermesPython -m pip --version | Out-Null
+        if ($LASTEXITCODE -eq 0) {
+            return
+        }
+    }
+
+    Write-Host "ensurepip was unavailable; downloading get-pip.py..."
+    $GetPip = Join-Path $SolarHome "get-pip.py"
+    Invoke-WebRequest -UseBasicParsing -Uri "https://bootstrap.pypa.io/get-pip.py" -OutFile $GetPip
+    & $HermesPython $GetPip | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        throw "Could not bootstrap pip in Hermes environment."
+    }
+
+    & $HermesPython -m pip --version | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        throw "pip is still unavailable in Hermes environment after bootstrap."
+    }
+}
+
+Ensure-HermesPip
 
 Write-Host "Installing Headroom into Hermes environment..."
 & $HermesPython -m pip install --upgrade pip | Out-Null
@@ -220,11 +276,17 @@ powershell -ExecutionPolicy Bypass -File "$SolarHermesPs1" %*
 
 $CurrentUserPath = [Environment]::GetEnvironmentVariable("Path", "User")
 if ($CurrentUserPath -notlike "*$BinDir*") {
-    [Environment]::SetEnvironmentVariable("Path", "$CurrentUserPath;$BinDir", "User")
+    if ($CurrentUserPath) {
+        [Environment]::SetEnvironmentVariable("Path", "$CurrentUserPath;$BinDir", "User")
+    }
+    else {
+        [Environment]::SetEnvironmentVariable("Path", $BinDir, "User")
+    }
 }
+Sync-ProcessPath
 
 Write-Host ""
 Write-Host "Done."
 Write-Host "Run: solar-hermes"
-Write-Host "If PowerShell cannot find it yet, open a new terminal or run:"
+Write-Host "If PowerShell cannot find it yet, run:"
 Write-Host "  $SolarHermesCmd"
