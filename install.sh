@@ -100,7 +100,7 @@ config["model"] = {
     "default": os.environ["LLM_MODEL"],
     "provider": "custom",
     "base_url": f"http://127.0.0.1:{os.environ['HEADROOM_PORT']}/v1",
-    "api_key": "headroom-local",
+    "api_key": os.environ["LLM_PLATFORM_TOKEN"],
 }
 agent = dict(config.get("agent") or {})
 agent["max_tokens"] = int(os.environ.get("HERMES_MAX_TOKENS", "32768"))

@@ -158,6 +158,7 @@ if ($LASTEXITCODE -ne 0) {
 
 $EnvPath = Join-Path $HermesHome ".env"
 $ConfigPath = Join-Path $HermesHome "config.yaml"
+$YamlToken = $Token.Replace("'", "''")
 
 @"
 # Solar Hermes local secrets/config. Do not commit.
@@ -176,7 +177,7 @@ model:
   default: $LlmModel
   provider: custom
   base_url: http://127.0.0.1:$HeadroomPort/v1
-  api_key: headroom-local
+  api_key: '$YamlToken'
 agent:
   max_tokens: 32768
   disable_api_streaming: true

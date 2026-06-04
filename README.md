@@ -36,6 +36,8 @@ solar-hermes chat --query "<message>" --quiet
 
 Если раньше была ошибка `hermes: headroom executable not found`, скачайте свежий `SolarHermes.exe` и нажмите установку заново. Новый установщик сам bootstrap-ит `pip` внутри Hermes venv (`ensurepip`, затем fallback `get-pip.py`), ставит `headroom-ai[proxy]` только из binary wheels, проверяет установку `headroom-ai`, ищет `headroom.exe/headroom.cmd/headroom.ps1`, а если entrypoint не создан, запускает Headroom через `python -m headroom.cli`.
 
+Если после установки была ошибка `401 could not validate credentials`, повторно запустите установку в свежем `SolarHermes.exe`. Установщик перепишет локальный `config.yaml`, чтобы Hermes отправлял в Headroom реальный LLM Platform token, а не placeholder `headroom-local`.
+
 ### macOS / Linux
 
 ```bash
@@ -80,7 +82,7 @@ model:
   default: qwen3.6
   provider: custom
   base_url: http://127.0.0.1:8787/v1
-  api_key: headroom-local
+  api_key: <LLM Platform API token>
 agent:
   max_tokens: 32768
   disable_api_streaming: true
