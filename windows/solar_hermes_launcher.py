@@ -421,10 +421,12 @@ class SolarHermesApp(tk.Tk):
             "cmd.exe",
             "/c",
             str(solar_cmd_path()),
-            "--oneshot",
+            "chat",
+            "--query",
             message,
             "--continue",
             SESSION_NAME,
+            "--quiet",
         ]
         try:
             process = subprocess.Popen(
@@ -497,6 +499,11 @@ class SolarHermesApp(tk.Tk):
             self._mark_install_stage(payload)
         elif event == "install_detail":
             self.install_details.append(payload)
+            detail = payload.strip()
+            if detail and hasattr(self, "install_body_var"):
+                if len(detail) > 180:
+                    detail = detail[:177] + "..."
+                self.install_body_var.set(detail)
             if self.detail_widget is not None:
                 self.detail_widget.configure(state=tk.NORMAL)
                 self.detail_widget.insert(tk.END, payload)
@@ -534,7 +541,7 @@ class SolarHermesApp(tk.Tk):
         active_index = order.index(active)
         friendly = {
             "hermes": "Проверяем и устанавливаем Hermes Agent...",
-            "headroom": "Ставим Headroom в окружение Hermes...",
+            "headroom": "Ставим pip/Headroom в окружение Hermes...",
             "config": "Записываем конфигурацию Solar LLM...",
             "launcher": "Создаём локальный запуск и проверяем готовность...",
         }

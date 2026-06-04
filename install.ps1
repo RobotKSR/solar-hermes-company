@@ -140,13 +140,16 @@ function Ensure-HermesPip {
 Ensure-HermesPip
 
 Write-Host "Installing Headroom into Hermes environment..."
-& $HermesPython -m pip install --upgrade pip | Out-Null
+Write-Host "Installing headroom-ai[proxy] with binary wheels only. This can take several minutes on first install."
+& $HermesPython -m pip install `
+    --disable-pip-version-check `
+    --prefer-binary `
+    --only-binary=:all: `
+    --progress-bar on `
+    --upgrade `
+    "headroom-ai[proxy]"
 if ($LASTEXITCODE -ne 0) {
-    throw "pip upgrade failed in Hermes environment."
-}
-& $HermesPython -m pip install --upgrade "headroom-ai[proxy,mcp]" | Out-Null
-if ($LASTEXITCODE -ne 0) {
-    throw "Headroom install failed in Hermes environment."
+    throw "Headroom install failed. Check the technical details above. If pip reports 'No matching distribution found', install Python 3.11/3.12 Hermes or use a newer Headroom wheel."
 }
 & $HermesPython -c "import headroom.cli" | Out-Null
 if ($LASTEXITCODE -ne 0) {

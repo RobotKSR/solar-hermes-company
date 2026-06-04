@@ -29,12 +29,12 @@ https://github.com/RobotKSR/solar-hermes-company/releases/latest
 Приложение само ставит/обновляет Hermes + Headroom и отправляет сообщения в Hermes через локальную команду:
 
 ```text
-solar-hermes --oneshot "<message>" --continue SolarHermesGUI
+solar-hermes chat --query "<message>" --continue SolarHermesGUI --quiet
 ```
 
 Ответ появляется прямо в окне приложения, отдельный PowerShell-чат и консольные окна не открываются.
 
-Если раньше была ошибка `hermes: headroom executable not found`, скачайте свежий `SolarHermes.exe` и нажмите установку заново. Новый установщик сам bootstrap-ит `pip` внутри Hermes venv (`ensurepip`, затем fallback `get-pip.py`), проверяет установку `headroom-ai`, ищет `headroom.exe/headroom.cmd/headroom.ps1`, а если entrypoint не создан, запускает Headroom через `python -m headroom.cli`.
+Если раньше была ошибка `hermes: headroom executable not found`, скачайте свежий `SolarHermes.exe` и нажмите установку заново. Новый установщик сам bootstrap-ит `pip` внутри Hermes venv (`ensurepip`, затем fallback `get-pip.py`), ставит `headroom-ai[proxy]` только из binary wheels, проверяет установку `headroom-ai`, ищет `headroom.exe/headroom.cmd/headroom.ps1`, а если entrypoint не создан, запускает Headroom через `python -m headroom.cli`.
 
 ### macOS / Linux
 
