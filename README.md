@@ -8,7 +8,7 @@
 - локальное сжатие контекста: [Headroom](https://github.com/chopratejas/headroom)
 - запуск после установки: `solar-hermes`
 
-Реальные токены не хранятся в репозитории. Установщик спрашивает токен у пользователя и сохраняет его локально в `~/.hermes/.env`.
+Реальные токены не хранятся в репозитории. Установщик спрашивает токен у пользователя в самом начале установки и сохраняет его локально в Hermes config (`~/.hermes/.env` на macOS/Linux или в реальном Hermes home на Windows, обычно `%LOCALAPPDATA%\hermes\.env`).
 
 ## One-Line Install
 
@@ -35,6 +35,14 @@ solar-hermes
 ```powershell
 %USERPROFILE%\.solar-hermes\bin\solar-hermes.cmd
 ```
+
+Windows installer автоматически ищет реальный Hermes home в таком порядке:
+
+1. `$env:HERMES_HOME`
+2. `%LOCALAPPDATA%\hermes`
+3. `%USERPROFILE%\.hermes`
+
+Поэтому он работает и с нативной Windows-установкой Hermes, и с WSL/Unix-like раскладкой.
 
 ## Что Делает Установщик
 

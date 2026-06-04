@@ -12,10 +12,26 @@ Write-Host "Solar Hermes installer"
 Write-Host "LLM: $LlmApiBaseUrl ($LlmModel)"
 Write-Host ""
 
-$HermesHome = if ($env:HERMES_HOME) { $env:HERMES_HOME } else { Join-Path $HOME ".hermes" }
 $SolarHome = Join-Path $HOME ".solar-hermes"
 $BinDir = Join-Path $SolarHome "bin"
-New-Item -ItemType Directory -Force -Path $HermesHome, $BinDir | Out-Null
+New-Item -ItemType Directory -Force -Path $SolarHome, $BinDir | Out-Null
+
+$Token = $env:LLM_PLATFORM_TOKEN
+if (-not $Token) {
+    Write-Host "Paste your LLM Platform API token for $LlmModel."
+    Write-Host "Input is hidden. The token will be stored locally in Hermes config."
+    $SecureToken = Read-Host "LLM Platform token" -AsSecureString
+    $Ptr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($SecureToken)
+    try {
+        $Token = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($Ptr)
+    }
+    finally {
+        [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($Ptr)
+    }
+}
+if (-not $Token) {
+    throw "Token is required."
+}
 
 if (-not (Get-Command hermes -ErrorAction SilentlyContinue)) {
     Write-Host "Installing Hermes Agent..."
@@ -32,31 +48,44 @@ if (-not (Get-Command hermes -ErrorAction SilentlyContinue)) {
     }
 }
 
+function Resolve-HermesHome {
+    $Candidates = @()
+    if ($env:HERMES_HOME) {
+        $Candidates += $env:HERMES_HOME
+    }
+    if ($env:LOCALAPPDATA) {
+        $Candidates += (Join-Path $env:LOCALAPPDATA "hermes")
+    }
+    $Candidates += (Join-Path $HOME ".hermes")
+
+    foreach ($Candidate in $Candidates) {
+        if (-not $Candidate) {
+            continue
+        }
+        $Python = Join-Path $Candidate "hermes-agent\venv\Scripts\python.exe"
+        if (Test-Path $Python) {
+            return $Candidate
+        }
+    }
+
+    if ($Candidates.Count -gt 0) {
+        return $Candidates[0]
+    }
+    return (Join-Path $HOME ".hermes")
+}
+
+$HermesHome = Resolve-HermesHome
+New-Item -ItemType Directory -Force -Path $HermesHome | Out-Null
+$env:HERMES_HOME = $HermesHome
+
 $HermesPython = Join-Path $HermesHome "hermes-agent\venv\Scripts\python.exe"
 if (-not (Test-Path $HermesPython)) {
-    throw "Hermes Python venv not found at $HermesPython. Open a new PowerShell and rerun installer."
+    throw "Hermes Python venv not found at $HermesPython. Detected Hermes home: $HermesHome. Open a new PowerShell and rerun installer."
 }
 
 Write-Host "Installing Headroom into Hermes environment..."
 & $HermesPython -m pip install --upgrade pip | Out-Null
 & $HermesPython -m pip install --upgrade "headroom-ai[proxy,mcp]" | Out-Null
-
-$Token = $env:LLM_PLATFORM_TOKEN
-if (-not $Token) {
-    Write-Host ""
-    Write-Host "Paste your LLM Platform API token for $LlmModel."
-    $SecureToken = Read-Host "LLM Platform token" -AsSecureString
-    $Ptr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($SecureToken)
-    try {
-        $Token = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($Ptr)
-    }
-    finally {
-        [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($Ptr)
-    }
-}
-if (-not $Token) {
-    throw "Token is required."
-}
 
 $EnvPath = Join-Path $HermesHome ".env"
 $ConfigPath = Join-Path $HermesHome "config.yaml"
@@ -135,6 +164,18 @@ Get-Content "`$env:HERMES_HOME\.env" | ForEach-Object {
 `$Port = if (`$env:HEADROOM_PORT) { `$env:HEADROOM_PORT } else { "$HeadroomPort" }
 `$Headroom = Join-Path "`$env:HERMES_HOME" "hermes-agent\venv\Scripts\headroom.exe"
 `$Hermes = Join-Path "`$env:HERMES_HOME" "hermes-agent\venv\Scripts\hermes.exe"
+if (-not (Test-Path `$Headroom)) {
+    throw "Headroom executable not found: `$Headroom"
+}
+if (-not (Test-Path `$Hermes)) {
+    `$HermesCommand = Get-Command hermes -ErrorAction SilentlyContinue
+    if (`$HermesCommand) {
+        `$Hermes = `$HermesCommand.Source
+    }
+    else {
+        throw "Hermes executable not found in `$env:HERMES_HOME or PATH"
+    }
+}
 try {
     Invoke-WebRequest -UseBasicParsing "http://127.0.0.1:`$Port/health" -TimeoutSec 2 | Out-Null
 }
@@ -149,7 +190,7 @@ catch {
 $SolarHermesCmd = Join-Path $BinDir "solar-hermes.cmd"
 @"
 @echo off
-powershell -ExecutionPolicy Bypass -File "%USERPROFILE%\.solar-hermes\bin\solar-hermes.ps1" %*
+powershell -ExecutionPolicy Bypass -File "$SolarHermesPs1" %*
 "@ | Set-Content -Encoding ASCII $SolarHermesCmd
 
 $CurrentUserPath = [Environment]::GetEnvironmentVariable("Path", "User")
