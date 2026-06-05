@@ -12,11 +12,27 @@ printf "LLM: %s (%s)\n\n" "$LLM_API_BASE_URL" "$LLM_MODEL"
 
 mkdir -p "$BIN_DIR"
 
-if [ -z "${LLM_PLATFORM_TOKEN:-}" ]; then
+prompt_for_token() {
+  local token=""
   printf "Paste your LLM Platform API token for %s.\n" "$LLM_MODEL"
   printf "Input is hidden. The token will be stored locally in Hermes config.\n"
-  read -r -s -p "LLM Platform token: " LLM_PLATFORM_TOKEN
-  printf "\n"
+  if [ -t 0 ]; then
+    read -r -s -p "LLM Platform token: " token
+    printf "\n"
+  elif [ -r /dev/tty ]; then
+    read -r -s -p "LLM Platform token: " token < /dev/tty
+    printf "\n" >/dev/tty
+  else
+    echo "Cannot prompt for token when stdin is not a terminal." >&2
+    echo "Use: LLM_PLATFORM_TOKEN=<token> curl -fsSL .../install.sh | bash" >&2
+    echo "Or:  curl -fsSL .../install.sh -o install.sh && bash install.sh" >&2
+    exit 1
+  fi
+  printf "%s" "$token"
+}
+
+if [ -z "${LLM_PLATFORM_TOKEN:-}" ]; then
+  LLM_PLATFORM_TOKEN="$(prompt_for_token)"
 fi
 
 if [ -z "$LLM_PLATFORM_TOKEN" ]; then
