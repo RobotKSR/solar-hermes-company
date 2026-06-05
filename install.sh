@@ -7,32 +7,28 @@ LLM_MODEL="${LLM_MODEL:-qwen3.6}"
 HEADROOM_PORT="${HEADROOM_PORT:-8787}"
 BIN_DIR="${BIN_DIR:-$HOME/.local/bin}"
 
+# curl | bash leaves stdin on the pipe; reconnect to the real terminal for prompts.
+if ! [ -t 0 ] && [ -r /dev/tty ]; then
+  exec </dev/tty
+fi
+
 printf "\nSolar Hermes installer\n"
 printf "LLM: %s (%s)\n\n" "$LLM_API_BASE_URL" "$LLM_MODEL"
 
 mkdir -p "$BIN_DIR"
 
-prompt_for_token() {
-  local token=""
-  printf "Paste your LLM Platform API token for %s.\n" "$LLM_MODEL"
-  printf "Input is hidden. The token will be stored locally in Hermes config.\n"
+if [ -z "${LLM_PLATFORM_TOKEN:-}" ]; then
   if [ -t 0 ]; then
-    read -r -s -p "LLM Platform token: " token
+    printf "Paste your LLM Platform API token for %s.\n" "$LLM_MODEL"
+    printf "Input is hidden. The token will be stored locally in Hermes config.\n"
+    read -r -s -p "LLM Platform token: " LLM_PLATFORM_TOKEN
     printf "\n"
-  elif [ -r /dev/tty ]; then
-    read -r -s -p "LLM Platform token: " token < /dev/tty
-    printf "\n" >/dev/tty
   else
-    echo "Cannot prompt for token when stdin is not a terminal." >&2
+    echo "Cannot prompt for token: no terminal available." >&2
     echo "Use: LLM_PLATFORM_TOKEN=<token> curl -fsSL .../install.sh | bash" >&2
     echo "Or:  curl -fsSL .../install.sh -o install.sh && bash install.sh" >&2
     exit 1
   fi
-  printf "%s" "$token"
-}
-
-if [ -z "${LLM_PLATFORM_TOKEN:-}" ]; then
-  LLM_PLATFORM_TOKEN="$(prompt_for_token)"
 fi
 
 if [ -z "$LLM_PLATFORM_TOKEN" ]; then
