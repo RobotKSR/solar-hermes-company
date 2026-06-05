@@ -104,7 +104,7 @@ $env:HERMES_HOME = $HermesHome
 
 $HermesPython = Join-Path $HermesHome "hermes-agent\venv\Scripts\python.exe"
 if (-not (Test-Path $HermesPython)) {
-    throw "Hermes Python venv not found at $HermesPython. Detected Hermes home: $HermesHome. Re-run Install / Update from SolarHermes.exe."
+    throw "Hermes Python venv not found at $HermesPython. Detected Hermes home: $HermesHome. Re-run the Solar Hermes installer."
 }
 
 function Ensure-HermesPip {
@@ -249,7 +249,7 @@ function Resolve-HeadroomLaunch {
             return @{ File = `$HermesPython; Args = @("-m", "headroom.cli") }
         }
     }
-    throw "Headroom executable not found and python -m headroom.cli is unavailable. Re-run Install / Update."
+    throw "Headroom executable not found and python -m headroom.cli is unavailable. Re-run the Solar Hermes installer."
 }
 if (-not (Test-Path `$Hermes)) {
     `$HermesCommand = Get-Command hermes -ErrorAction SilentlyContinue
@@ -293,5 +293,7 @@ Sync-ProcessPath
 Write-Host ""
 Write-Host "Done."
 Write-Host "Run: solar-hermes"
+Write-Host "Or pass a token non-interactively:"
+Write-Host '  $env:LLM_PLATFORM_TOKEN="<token>"; irm https://raw.githubusercontent.com/RobotKSR/solar-hermes-company/main/install.ps1 | iex'
 Write-Host "If PowerShell cannot find it yet, run:"
 Write-Host "  $SolarHermesCmd"

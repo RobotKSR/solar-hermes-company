@@ -5,13 +5,24 @@ LLM_PUBLIC_BASE_URL="${LLM_PUBLIC_BASE_URL:-https://llm.solar-group.com}"
 LLM_API_BASE_URL="${LLM_API_BASE_URL:-https://llm.solar-group.com/v1}"
 LLM_MODEL="${LLM_MODEL:-qwen3.6}"
 HEADROOM_PORT="${HEADROOM_PORT:-8787}"
-HERMES_HOME="${HERMES_HOME:-$HOME/.hermes}"
 BIN_DIR="${BIN_DIR:-$HOME/.local/bin}"
 
 printf "\nSolar Hermes installer\n"
 printf "LLM: %s (%s)\n\n" "$LLM_API_BASE_URL" "$LLM_MODEL"
 
-mkdir -p "$BIN_DIR" "$HERMES_HOME"
+mkdir -p "$BIN_DIR"
+
+if [ -z "${LLM_PLATFORM_TOKEN:-}" ]; then
+  printf "Paste your LLM Platform API token for %s.\n" "$LLM_MODEL"
+  printf "Input is hidden. The token will be stored locally in Hermes config.\n"
+  read -r -s -p "LLM Platform token: " LLM_PLATFORM_TOKEN
+  printf "\n"
+fi
+
+if [ -z "$LLM_PLATFORM_TOKEN" ]; then
+  echo "Token is required." >&2
+  exit 1
+fi
 
 if ! command -v hermes >/dev/null 2>&1 && [ ! -x "$BIN_DIR/hermes" ]; then
   printf "Installing Hermes Agent...\n"
@@ -19,30 +30,77 @@ if ! command -v hermes >/dev/null 2>&1 && [ ! -x "$BIN_DIR/hermes" ]; then
     | bash -s -- --skip-setup --skip-browser --non-interactive
 fi
 
-export PATH="$BIN_DIR:$HERMES_HOME/bin:$PATH"
+export PATH="$BIN_DIR:$PATH"
+
+resolve_hermes_home() {
+  local candidate
+  if [ -n "${HERMES_HOME:-}" ] && [ -x "$HERMES_HOME/hermes-agent/venv/bin/python" ]; then
+    printf "%s" "$HERMES_HOME"
+    return 0
+  fi
+  for candidate in "$HOME/.hermes"; do
+    if [ -x "$candidate/hermes-agent/venv/bin/python" ]; then
+      printf "%s" "$candidate"
+      return 0
+    fi
+  done
+  if [ -n "${HERMES_HOME:-}" ]; then
+    printf "%s" "$HERMES_HOME"
+  else
+    printf "%s" "$HOME/.hermes"
+  fi
+}
+
+HERMES_HOME="$(resolve_hermes_home)"
+export HERMES_HOME
+mkdir -p "$HERMES_HOME"
 
 HERMES_PY="$HERMES_HOME/hermes-agent/venv/bin/python"
-HERMES_HEADROOM="$HERMES_HOME/hermes-agent/venv/bin/headroom"
-
 if [ ! -x "$HERMES_PY" ]; then
   echo "Hermes Python venv not found at $HERMES_PY" >&2
-  echo "Try opening a new terminal and rerunning this installer." >&2
+  echo "Detected Hermes home: $HERMES_HOME" >&2
+  echo "Re-run the Solar Hermes installer." >&2
   exit 1
 fi
 
-printf "Installing Headroom into Hermes environment...\n"
-"$HERMES_PY" -m pip install --upgrade pip >/dev/null
-"$HERMES_PY" -m pip install --upgrade "headroom-ai[proxy]" >/dev/null
+ensure_hermes_pip() {
+  printf "Ensuring pip in Hermes environment...\n"
+  if "$HERMES_PY" -m pip --version >/dev/null 2>&1; then
+    return 0
+  fi
 
-if [ -z "${LLM_PLATFORM_TOKEN:-}" ]; then
-  printf "\nPaste your LLM Platform API token for %s.\n" "$LLM_MODEL"
-  printf "Input is hidden. The token will be stored locally in %s/.env\n" "$HERMES_HOME"
-  read -r -s -p "LLM Platform token: " LLM_PLATFORM_TOKEN
-  printf "\n"
+  if "$HERMES_PY" -m ensurepip --upgrade >/dev/null 2>&1; then
+    if "$HERMES_PY" -m pip --version >/dev/null 2>&1; then
+      return 0
+    fi
+  fi
+
+  printf "ensurepip was unavailable; downloading get-pip.py...\n"
+  local get_pip="$HOME/.solar-hermes/get-pip.py"
+  mkdir -p "$HOME/.solar-hermes"
+  curl -fsSL https://bootstrap.pypa.io/get-pip.py -o "$get_pip"
+  "$HERMES_PY" "$get_pip" >/dev/null
+  if ! "$HERMES_PY" -m pip --version >/dev/null 2>&1; then
+    echo "Could not bootstrap pip in Hermes environment." >&2
+    exit 1
+  fi
+}
+
+ensure_hermes_pip
+
+printf "Installing Headroom into Hermes environment...\n"
+printf "Installing headroom-ai[proxy]. This can take several minutes on first install.\n"
+if ! "$HERMES_PY" -m pip install \
+  --disable-pip-version-check \
+  --prefer-binary \
+  --upgrade \
+  "headroom-ai[proxy]"; then
+  echo "Headroom install failed." >&2
+  exit 1
 fi
 
-if [ -z "$LLM_PLATFORM_TOKEN" ]; then
-  echo "Token is required." >&2
+if ! "$HERMES_PY" -c "import headroom.cli" >/dev/null 2>&1; then
+  echo "Headroom Python package is installed incorrectly: cannot import headroom.cli." >&2
   exit 1
 fi
 
@@ -69,14 +127,12 @@ updates = {
     "ALL_PROXY": "",
 }
 
-lines = []
 existing = {}
 if env_path.exists():
     for line in env_path.read_text(encoding="utf-8").splitlines():
         if "=" in line and not line.lstrip().startswith("#"):
             existing[line.split("=", 1)[0]] = line
-        else:
-            lines.append(line)
+
 for key, value in updates.items():
     existing[key] = f"{key}={value}"
 
@@ -155,25 +211,69 @@ export HERMES_HOME="${HERMES_HOME}"
 set -a
 [ -f "\$HERMES_HOME/.env" ] && . "\$HERMES_HOME/.env"
 set +a
-HEADROOM_PORT="\${HEADROOM_PORT:-${HEADROOM_PORT}}"
-HEADROOM_BIN="\$HERMES_HOME/hermes-agent/venv/bin/headroom"
-HERMES_BIN="${BIN_DIR}/hermes"
+PORT="\${HEADROOM_PORT:-${HEADROOM_PORT}}"
+SCRIPTS_DIR="\$HERMES_HOME/hermes-agent/venv/bin"
+PY_BIN="\$SCRIPTS_DIR/python"
 
-if ! curl -fsS "http://127.0.0.1:\$HEADROOM_PORT/health" >/dev/null 2>&1; then
+resolve_hermes_bin() {
+  if [ -x "\$SCRIPTS_DIR/hermes" ]; then
+    printf "%s" "\$SCRIPTS_DIR/hermes"
+    return 0
+  fi
+  if command -v hermes >/dev/null 2>&1; then
+    command -v hermes
+    return 0
+  fi
+  if [ -x "${BIN_DIR}/hermes" ]; then
+    printf "%s" "${BIN_DIR}/hermes"
+    return 0
+  fi
+  return 1
+}
+
+start_headroom_if_needed() {
+  if curl -fsS "http://127.0.0.1:\${PORT}/health" >/dev/null 2>&1; then
+    return 0
+  fi
   mkdir -p "\$HERMES_HOME/logs"
-  nohup "\$HEADROOM_BIN" proxy --host 127.0.0.1 --port "\$HEADROOM_PORT" \\
-    --openai-api-url "${LLM_PUBLIC_BASE_URL}" \\
-    > "\$HERMES_HOME/logs/headroom-proxy.log" 2>&1 &
+  if [ -x "\$SCRIPTS_DIR/headroom" ]; then
+    nohup "\$SCRIPTS_DIR/headroom" proxy --host 127.0.0.1 --port "\$PORT" \\
+      --openai-api-url "${LLM_PUBLIC_BASE_URL}" \\
+      > "\$HERMES_HOME/logs/headroom-proxy.log" 2>&1 &
+  elif [ -x "\$PY_BIN" ] && "\$PY_BIN" -c "import headroom.cli" >/dev/null 2>&1; then
+    nohup "\$PY_BIN" -m headroom.cli proxy --host 127.0.0.1 --port "\$PORT" \\
+      --openai-api-url "${LLM_PUBLIC_BASE_URL}" \\
+      > "\$HERMES_HOME/logs/headroom-proxy.log" 2>&1 &
+  else
+    echo "Headroom executable not found and python -m headroom.cli is unavailable. Re-run the Solar Hermes installer." >&2
+    exit 1
+  fi
   for _ in 1 2 3 4 5 6 7 8 9 10; do
-    curl -fsS "http://127.0.0.1:\$HEADROOM_PORT/health" >/dev/null 2>&1 && break
+    if curl -fsS "http://127.0.0.1:\${PORT}/health" >/dev/null 2>&1; then
+      return 0
+    fi
     sleep 1
   done
+  echo "Headroom proxy did not become healthy on port \${PORT}." >&2
+  exit 1
+}
+
+HERMES_BIN="\$(resolve_hermes_bin || true)"
+if [ -z "\$HERMES_BIN" ]; then
+  echo "Hermes executable not found in \$HERMES_HOME or PATH." >&2
+  exit 1
 fi
 
+start_headroom_if_needed
 exec "\$HERMES_BIN" "\$@"
 EOF
 chmod +x "$BIN_DIR/solar-hermes"
 
 printf "\nDone.\n"
 printf "Run: solar-hermes\n"
-printf "If your shell cannot find it yet, run: export PATH=\"%s:\\$PATH\"\n" "$BIN_DIR"
+printf "Or pass a token non-interactively:\n"
+printf "  LLM_PLATFORM_TOKEN=<token> curl -fsSL https://raw.githubusercontent.com/RobotKSR/solar-hermes-company/main/install.sh | bash\n"
+if ! printf "%s" "$PATH" | tr ':' '\n' | grep -qx "$BIN_DIR"; then
+  printf "If your shell cannot find solar-hermes yet, run:\n"
+  printf "  export PATH=\"%s:\$PATH\"\n" "$BIN_DIR"
+fi

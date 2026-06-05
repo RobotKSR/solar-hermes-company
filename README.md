@@ -38,23 +38,43 @@ solar-hermes chat --query "<message>"
 
 Если после установки была ошибка `401 could not validate credentials`, повторно запустите установку в свежем `SolarHermes.exe`. Установщик перепишет локальный `config.yaml`, чтобы Hermes отправлял в Headroom реальный LLM Platform token, а не placeholder `headroom-local`.
 
-### macOS / Linux
+### macOS / Linux (CLI)
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/RobotKSR/solar-hermes-company/main/install.sh | bash
 ```
 
-### Windows PowerShell
+Без интерактивного ввода токена:
+
+```bash
+LLM_PLATFORM_TOKEN="<token>" curl -fsSL https://raw.githubusercontent.com/RobotKSR/solar-hermes-company/main/install.sh | bash
+```
+
+### Windows PowerShell (CLI)
 
 ```powershell
 irm https://raw.githubusercontent.com/RobotKSR/solar-hermes-company/main/install.ps1 | iex
 ```
 
-Установщик попросит вставить API-токен из LLM Platform. После установки:
+Без интерактивного ввода токена:
+
+```powershell
+$env:LLM_PLATFORM_TOKEN="<token>"; irm https://raw.githubusercontent.com/RobotKSR/solar-hermes-company/main/install.ps1 | iex
+```
+
+Установщик спрашивает API-токен **в самом начале**, до установки Hermes и Headroom. После установки:
 
 ```bash
 solar-hermes
 ```
+
+Одно сообщение без интерактивного чата:
+
+```bash
+solar-hermes chat --query "Привет, какой ты моделью пользуешься?"
+```
+
+В CLI Hermes сам показывает streaming-ответ и запрашивает подтверждения опасных действий в терминале — поведение то же, что и в `SolarHermes.exe`, только без отдельного GUI.
 
 На Windows установщик обновляет `PATH` внутри текущего процесса, поэтому перезапуск PowerShell не нужен. Если команда всё равно не найдена, запустите абсолютный путь:
 
@@ -62,20 +82,42 @@ solar-hermes
 %USERPROFILE%\.solar-hermes\bin\solar-hermes.cmd
 ```
 
+На macOS/Linux команда ставится в `~/.local/bin/solar-hermes`. Если shell её не видит:
+
+```bash
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+### Поиск Hermes home
+
 Windows installer автоматически ищет реальный Hermes home в таком порядке:
 
 1. `$env:HERMES_HOME`
 2. `%LOCALAPPDATA%\hermes`
 3. `%USERPROFILE%\.hermes`
 
-Поэтому он работает и с нативной Windows-установкой Hermes, и с WSL/Unix-like раскладкой.
+macOS/Linux installer ищет:
+
+1. `$HERMES_HOME`
+2. `~/.hermes`
+
+### Типичные ошибки CLI
+
+| Ошибка | Что делать |
+|--------|------------|
+| `headroom executable not found` | Повторно запустите установщик. Он bootstrap-ит `pip` (`ensurepip` → `get-pip.py`), ставит `headroom-ai[proxy]`, проверяет `import headroom.cli` и при отсутствии `headroom` бинарника запускает `python -m headroom.cli`. |
+| `401 could not validate credentials` | Повторно запустите установщик с актуальным токеном. Установщик перепишет `config.yaml`, чтобы `model.api_key` был реальным LLM Platform token, а не placeholder. |
+| `no session found matching` | Не используйте `--continue` с фиксированным именем сессии. Для одного сообщения: `solar-hermes chat --query "..."`. |
+| `hermes -z: no final response` | Не используйте `--oneshot/-z`. Для CLI и GUI используется `chat --query`. |
 
 ## Что Делает Установщик
 
-1. Ставит официальный Hermes Agent.
-2. Ставит `headroom-ai[proxy]` в Python-окружение Hermes.
-3. Сохраняет LLM Platform token в `~/.hermes/.env`.
-4. Настраивает `~/.hermes/config.yaml`:
+1. Спрашивает LLM Platform token (или берёт из `LLM_PLATFORM_TOKEN`).
+2. Ставит официальный Hermes Agent, если его ещё нет.
+3. Bootstrap-ит `pip` в Hermes venv, если нужно.
+4. Ставит `headroom-ai[proxy]` в Python-окружение Hermes и проверяет `import headroom.cli`.
+5. Сохраняет LLM Platform token в Hermes `.env`.
+6. Настраивает `~/.hermes/config.yaml`:
 
 ```yaml
 model:
@@ -92,8 +134,8 @@ compression:
   enabled: true
 ```
 
-5. Создаёт команду `solar-hermes`.
-6. При запуске `solar-hermes` стартует локальный Headroom proxy на `127.0.0.1:8787`, затем открывается чат Hermes.
+7. Создаёт команду `solar-hermes` с fallback-запуском Headroom через `python -m headroom.cli`.
+8. При запуске `solar-hermes` стартует локальный Headroom proxy на `127.0.0.1:8787`, затем открывается чат Hermes.
 
 Поток запросов:
 
@@ -135,7 +177,7 @@ Authorization: Bearer <token>
 
 ## Streaming
 
-Windows GUI использует streaming, чтобы ответ Hermes был виден в окне по мере генерации. Если конкретная сеть или прокси начинает рвать long-running streaming responses, можно временно вернуть `agent.disable_api_streaming: true` и `display.streaming: false` в локальном `config.yaml`.
+И CLI, и Windows GUI используют streaming (`display.streaming: true`, `agent.disable_api_streaming: false`), чтобы ответ Hermes был виден по мере генерации. Если конкретная сеть или прокси начинает рвать long-running streaming responses, можно временно вернуть `agent.disable_api_streaming: true` и `display.streaming: false` в локальном `config.yaml`.
 
 ## Безопасность
 
