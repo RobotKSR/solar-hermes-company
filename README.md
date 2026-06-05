@@ -29,10 +29,10 @@ https://github.com/RobotKSR/solar-hermes-company/releases/latest
 Приложение само ставит/обновляет Hermes + Headroom и отправляет сообщения в Hermes через локальную команду:
 
 ```text
-solar-hermes chat --query "<message>" --quiet
+solar-hermes chat --query "<message>"
 ```
 
-Ответ появляется прямо в окне приложения, отдельный PowerShell-чат и консольные окна не открываются.
+Ответ появляется прямо в окне приложения в режиме live stream, отдельный PowerShell-чат и консольные окна не открываются. Если Hermes запрашивает подтверждение действия, приложение показывает кнопки `Разрешить 1 раз`, `Разрешить на сессию`, `Всегда разрешать`, `Отклонить` и отправляет выбранный ответ обратно в активный Hermes-процесс.
 
 Если раньше была ошибка `hermes: headroom executable not found`, скачайте свежий `SolarHermes.exe` и нажмите установку заново. Новый установщик сам bootstrap-ит `pip` внутри Hermes venv (`ensurepip`, затем fallback `get-pip.py`), ставит `headroom-ai[proxy]` только из binary wheels, проверяет установку `headroom-ai`, ищет `headroom.exe/headroom.cmd/headroom.ps1`, а если entrypoint не создан, запускает Headroom через `python -m headroom.cli`.
 
@@ -73,7 +73,7 @@ Windows installer автоматически ищет реальный Hermes ho
 ## Что Делает Установщик
 
 1. Ставит официальный Hermes Agent.
-2. Ставит `headroom-ai[proxy,mcp]` в Python-окружение Hermes.
+2. Ставит `headroom-ai[proxy]` в Python-окружение Hermes.
 3. Сохраняет LLM Platform token в `~/.hermes/.env`.
 4. Настраивает `~/.hermes/config.yaml`:
 
@@ -85,9 +85,9 @@ model:
   api_key: <LLM Platform API token>
 agent:
   max_tokens: 32768
-  disable_api_streaming: true
+  disable_api_streaming: false
 display:
-  streaming: false
+  streaming: true
 compression:
   enabled: true
 ```
@@ -131,11 +131,11 @@ Authorization: Bearer <token>
 
 - обновит Headroom;
 - заново применит корпоративную конфигурацию;
-- повторно применит маленький патч Hermes для стабильного non-streaming режима на длинных tool-call ответах.
+- повторно применит маленький патч Hermes, чтобы config мог управлять streaming/max_tokens.
 
-## Почему Non-Streaming
+## Streaming
 
-Qwen/vLLM поддерживает streaming, и `llm.solar-group.com` тоже может проксировать `stream=true`. Но у Hermes на длинных tool-call ответах через `nginx -> FastAPI proxy -> vLLM` возможны `incomplete chunked read`. Поэтому корпоративная сборка использует стабильный non-streaming режим для основного LLM вызова, а Headroom всё равно работает локально как proxy сжатия контекста.
+Windows GUI использует streaming, чтобы ответ Hermes был виден в окне по мере генерации. Если конкретная сеть или прокси начинает рвать long-running streaming responses, можно временно вернуть `agent.disable_api_streaming: true` и `display.streaming: false` в локальном `config.yaml`.
 
 ## Безопасность
 

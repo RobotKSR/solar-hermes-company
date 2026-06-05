@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import queue
+import re
 import subprocess
 import sys
 import threading
@@ -12,6 +13,8 @@ from tkinter import messagebox, scrolledtext
 
 INSTALLER_URL = "https://raw.githubusercontent.com/RobotKSR/solar-hermes-company/main/install.ps1"
 APP_TITLE = "Solar Hermes"
+ANSI_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]|\x1b\][^\x07]*(?:\x07|\x1b\\)")
+BOX_CHARS = set("─━│┃┌┐└┘╭╮╰╯├┤┬┴┼┏┓┗┛╔╗╚╝═║╠╣╦╩╬ ")
 
 
 def user_home() -> Path:
@@ -42,17 +45,38 @@ def windows_creation_flags() -> int:
     return getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
 
+def strip_ansi(text: str) -> str:
+    return ANSI_RE.sub("", text)
+
+
 def clean_assistant_output(text: str) -> str:
     lines = []
-    for raw_line in text.replace("\r\n", "\n").split("\n"):
+    for raw_line in strip_ansi(text).replace("\r\n", "\n").replace("\r", "\n").split("\n"):
         line = raw_line.strip()
         if not line:
             lines.append("")
             continue
-        if line.startswith(("Hermes Agent", "usage: hermes", "[Hermes exited")):
+        if line.startswith(("Hermes Agent", "usage: hermes", "[Hermes exited", "session_id:")):
             continue
-        lines.append(raw_line)
+        if line in {"Initializing agent...", "Resume this session with:"}:
+            continue
+        if line and all(ch in BOX_CHARS for ch in line):
+            continue
+        line = line.strip("".join(BOX_CHARS))
+        if line:
+            lines.append(line)
     return "\n".join(lines).strip()
+
+
+def looks_like_approval_prompt(text: str) -> bool:
+    lowered = strip_ansi(text).lower()
+    has_choice_words = (
+        "once" in lowered
+        and ("session" in lowered or "always" in lowered)
+        and ("deny" in lowered or "cancel" in lowered)
+    )
+    has_prompt_shape = "[o]" in lowered or "(o)" in lowered or "approval" in lowered
+    return has_choice_words and has_prompt_shape
 
 
 class SolarHermesApp(tk.Tk):
@@ -66,7 +90,12 @@ class SolarHermesApp(tk.Tk):
         self.ui_queue: queue.Queue[tuple[str, str]] = queue.Queue()
         self.install_details: list[str] = []
         self.detail_widget: scrolledtext.ScrolledText | None = None
-        self.chat_widget: scrolledtext.ScrolledText | None = None
+        self.chat_canvas: tk.Canvas | None = None
+        self.messages_frame: tk.Frame | None = None
+        self.current_assistant_label: tk.Label | None = None
+        self.current_assistant_text = ""
+        self.approval_frame: tk.Frame | None = None
+        self.active_process: subprocess.Popen | None = None
         self.message_entry: tk.Entry | None = None
         self.primary_button: tk.Button | None = None
         self.secondary_button: tk.Button | None = None
@@ -358,6 +387,8 @@ class SolarHermesApp(tk.Tk):
 
         self._clear()
         self._header(3)
+        self.current_assistant_label = None
+        self.current_assistant_text = ""
 
         top = tk.Frame(self.root_frame)
         top.pack(fill=tk.X, pady=(0, 10))
@@ -368,30 +399,79 @@ class SolarHermesApp(tk.Tk):
         ).pack(side=tk.LEFT)
         tk.Button(top, text="Настройки", command=self._show_token_step).pack(side=tk.RIGHT)
 
-        self.chat_widget = scrolledtext.ScrolledText(
-            self.root_frame,
-            height=22,
-            wrap=tk.WORD,
-            state=tk.DISABLED,
-            font=("Segoe UI", 10),
+        chat_shell = tk.Frame(self.root_frame, bg="#f3f4f6", bd=1, relief=tk.SOLID)
+        chat_shell.pack(fill=tk.BOTH, expand=True)
+        self.chat_canvas = tk.Canvas(chat_shell, bg="#f3f4f6", highlightthickness=0)
+        scrollbar = tk.Scrollbar(chat_shell, orient=tk.VERTICAL, command=self.chat_canvas.yview)
+        self.messages_frame = tk.Frame(self.chat_canvas, bg="#f3f4f6")
+        window_id = self.chat_canvas.create_window((0, 0), window=self.messages_frame, anchor="nw")
+        self.chat_canvas.configure(yscrollcommand=scrollbar.set)
+        self.chat_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        self.messages_frame.bind(
+            "<Configure>",
+            lambda _event: self.chat_canvas.configure(scrollregion=self.chat_canvas.bbox("all"))
+            if self.chat_canvas is not None
+            else None,
         )
-        self.chat_widget.pack(fill=tk.BOTH, expand=True)
-        self._append_chat(
-            "system",
-            "Готово. Пишите сообщение ниже, Hermes ответит в этом окне.",
+        self.chat_canvas.bind(
+            "<Configure>",
+            lambda event: self.chat_canvas.itemconfigure(window_id, width=event.width)
+            if self.chat_canvas is not None
+            else None,
         )
+
+        self.approval_frame = tk.Frame(self.root_frame, bg="#fff7ed", bd=1, relief=tk.SOLID)
+        tk.Label(
+            self.approval_frame,
+            text="Hermes просит подтверждение действия",
+            bg="#fff7ed",
+            fg="#9a3412",
+            font=("Segoe UI", 10, "bold"),
+        ).pack(side=tk.LEFT, padx=10, pady=8)
+        for text, choice in [
+            ("Разрешить 1 раз", "once"),
+            ("Разрешить на сессию", "session"),
+            ("Всегда разрешать", "always"),
+            ("Отклонить", "deny"),
+        ]:
+            tk.Button(
+                self.approval_frame,
+                text=text,
+                command=lambda selected=choice: self._send_approval(selected),
+            ).pack(side=tk.LEFT, padx=(0, 8), pady=6)
 
         input_frame = tk.Frame(self.root_frame)
         input_frame.pack(fill=tk.X, pady=(12, 0))
         self.message_var = tk.StringVar()
-        self.message_entry = tk.Entry(input_frame, textvariable=self.message_var, font=("Segoe UI", 11))
-        self.message_entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        self.message_entry = tk.Entry(
+            input_frame,
+            textvariable=self.message_var,
+            font=("Segoe UI", 12),
+            relief=tk.SOLID,
+            bd=1,
+        )
+        self.message_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, ipady=8)
         self.message_entry.bind("<Return>", lambda _event: self.send_message())
-        self.send_button = tk.Button(input_frame, text="Отправить", command=self.send_message, width=14)
+        self.send_button = tk.Button(
+            input_frame,
+            text="Отправить",
+            command=self.send_message,
+            width=14,
+            height=2,
+            bg="#2563eb",
+            fg="white",
+            activebackground="#1d4ed8",
+            activeforeground="white",
+        )
         self.send_button.pack(side=tk.RIGHT, padx=(10, 0))
         self.message_entry.focus_set()
         self._footer()
         self.status_var.set("Ready.")
+        self._append_chat(
+            "system",
+            "Готово. Пишите сообщение ниже. Ответ Hermes будет появляться в реальном времени.",
+        )
 
     def _open_chat_if_installed(self) -> None:
         if not solar_cmd_path().exists():
@@ -410,7 +490,8 @@ class SolarHermesApp(tk.Tk):
         self.message_var.set("")
         self._append_chat("user", message)
         self._set_chat_busy(True)
-        self.status_var.set("Hermes думает...")
+        self._hide_approval_controls()
+        self.status_var.set("Hermes отвечает...")
         self.worker = threading.Thread(target=self._chat_worker, args=(message,), daemon=True)
         self.worker.start()
 
@@ -423,11 +504,12 @@ class SolarHermesApp(tk.Tk):
             "chat",
             "--query",
             message,
-            "--quiet",
         ]
+        self.ui_queue.put(("chat_assistant_start", ""))
         try:
             process = subprocess.Popen(
                 command,
+                stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,
@@ -441,31 +523,102 @@ class SolarHermesApp(tk.Tk):
             self.ui_queue.put(("chat_failed", f"Не удалось запустить Hermes: {exc}"))
             return
 
+        self.active_process = process
         assert process.stdout is not None
-        output = process.stdout.read()
+        raw_parts: list[str] = []
+        last_display = ""
+        approval_shown = False
+        while True:
+            chunk = process.stdout.read(1)
+            if chunk == "":
+                break
+            raw_parts.append(chunk)
+            raw_text = "".join(raw_parts)
+            display = clean_assistant_output(raw_text)
+            if display and display != last_display:
+                self.ui_queue.put(("chat_replace", display))
+                last_display = display
+            if not approval_shown and looks_like_approval_prompt(raw_text):
+                approval_shown = True
+                self.ui_queue.put(("approval_needed", ""))
+
         code = process.wait()
-        cleaned = clean_assistant_output(output)
-        if code == 0 and cleaned:
+        raw_output = "".join(raw_parts)
+        cleaned = clean_assistant_output(raw_output)
+        if code == 0:
             self.ui_queue.put(("chat_done", cleaned))
-        elif code == 0:
-            self.ui_queue.put(("chat_failed", "Hermes завершился без ответа."))
         else:
-            error_text = cleaned or output.strip() or f"Exit code {code}"
+            error_text = cleaned or strip_ansi(raw_output).strip() or f"Exit code {code}"
             self.ui_queue.put(("chat_failed", error_text))
 
-    def _append_chat(self, role: str, text: str) -> None:
-        if self.chat_widget is None:
+    def _scroll_chat(self) -> None:
+        if self.chat_canvas is None:
             return
-        label = {
-            "system": "Solar Hermes",
-            "user": "Вы",
-            "assistant": "Hermes",
-            "error": "Ошибка",
-        }[role]
-        self.chat_widget.configure(state=tk.NORMAL)
-        self.chat_widget.insert(tk.END, f"\n{label}:\n{text.strip()}\n")
-        self.chat_widget.configure(state=tk.DISABLED)
-        self.chat_widget.see(tk.END)
+        self.chat_canvas.update_idletasks()
+        self.chat_canvas.yview_moveto(1.0)
+
+    def _append_chat(self, role: str, text: str) -> tk.Label | None:
+        if self.messages_frame is None:
+            return None
+        colors = {
+            "system": ("#e5e7eb", "#374151", tk.LEFT),
+            "user": ("#2563eb", "white", tk.RIGHT),
+            "assistant": ("white", "#111827", tk.LEFT),
+            "error": ("#fee2e2", "#991b1b", tk.LEFT),
+        }
+        bg, fg, side = colors[role]
+        row = tk.Frame(self.messages_frame, bg="#f3f4f6")
+        row.pack(fill=tk.X, padx=12, pady=6)
+        bubble = tk.Label(
+            row,
+            text=text.strip() or "…",
+            bg=bg,
+            fg=fg,
+            justify=tk.LEFT,
+            anchor="w",
+            wraplength=580,
+            padx=14,
+            pady=10,
+            font=("Segoe UI", 10),
+        )
+        bubble.pack(side=side, anchor="e" if side == tk.RIGHT else "w")
+        self._scroll_chat()
+        return bubble
+
+    def _replace_current_assistant(self, text: str) -> None:
+        if self.current_assistant_label is None:
+            self.current_assistant_label = self._append_chat("assistant", "…")
+        self.current_assistant_text = text.strip() or "…"
+        if self.current_assistant_label is not None:
+            self.current_assistant_label.configure(text=self.current_assistant_text)
+        self._scroll_chat()
+
+    def _show_approval_controls(self) -> None:
+        if self.approval_frame is not None and not self.approval_frame.winfo_ismapped():
+            self.approval_frame.pack(fill=tk.X, pady=(10, 0))
+            self._append_chat("system", "Нужно подтверждение. Выберите действие кнопками ниже.")
+
+    def _hide_approval_controls(self) -> None:
+        if self.approval_frame is not None and self.approval_frame.winfo_ismapped():
+            self.approval_frame.pack_forget()
+
+    def _send_approval(self, choice: str) -> None:
+        mapping = {
+            "once": "o\n",
+            "session": "s\n",
+            "always": "a\n",
+            "deny": "d\n",
+        }
+        process = self.active_process
+        if process is None or process.stdin is None:
+            return
+        try:
+            process.stdin.write(mapping[choice])
+            process.stdin.flush()
+            self._hide_approval_controls()
+            self._append_chat("system", f"Ответ на подтверждение отправлен: {choice}.")
+        except Exception as exc:
+            self._append_chat("error", f"Не удалось отправить подтверждение: {exc}")
 
     def _set_chat_busy(self, busy: bool) -> None:
         state = tk.DISABLED if busy else tk.NORMAL
@@ -480,6 +633,7 @@ class SolarHermesApp(tk.Tk):
         env["HTTPS_PROXY"] = ""
         env["HTTP_PROXY"] = ""
         env["ALL_PROXY"] = ""
+        env["PYTHONUNBUFFERED"] = "1"
         return env
 
     def _drain_ui_queue(self) -> None:
@@ -522,14 +676,31 @@ class SolarHermesApp(tk.Tk):
                 self.primary_button.configure(state=tk.DISABLED)
             if self.secondary_button is not None:
                 self.secondary_button.configure(state=tk.NORMAL)
+        elif event == "chat_assistant_start":
+            self.current_assistant_label = self._append_chat("assistant", "Hermes думает…")
+            self.current_assistant_text = ""
+        elif event == "chat_replace":
+            self._replace_current_assistant(payload)
+        elif event == "approval_needed":
+            self._show_approval_controls()
         elif event == "chat_done":
-            self._append_chat("assistant", payload)
+            if payload:
+                self._replace_current_assistant(payload)
+            self._hide_approval_controls()
             self.status_var.set("Ready.")
             self._set_chat_busy(False)
+            self.current_assistant_label = None
+            self.active_process = None
         elif event == "chat_failed":
-            self._append_chat("error", payload)
+            if self.current_assistant_label is not None:
+                self._replace_current_assistant(payload)
+            else:
+                self._append_chat("error", payload)
+            self._hide_approval_controls()
             self.status_var.set("Hermes error.")
             self._set_chat_busy(False)
+            self.current_assistant_label = None
+            self.active_process = None
 
     def _mark_install_stage(self, active: str) -> None:
         order = ["hermes", "headroom", "config", "launcher"]
@@ -553,7 +724,6 @@ class SolarHermesApp(tk.Tk):
                 label.configure(text="●", fg="#2563eb")
             else:
                 label.configure(text="○", fg="#6b7280")
-
 
 def main() -> int:
     if sys.platform != "win32":

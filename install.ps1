@@ -165,6 +165,7 @@ $YamlToken = $Token.Replace("'", "''")
 ALL_PROXY=
 HEADROOM_PORT=$HeadroomPort
 HEADROOM_TELEMETRY=off
+HERMES_STREAM_READ_TIMEOUT=1800
 HTTP_PROXY=
 HTTPS_PROXY=
 NO_PROXY=*
@@ -180,9 +181,9 @@ model:
   api_key: '$YamlToken'
 agent:
   max_tokens: 32768
-  disable_api_streaming: true
+  disable_api_streaming: false
 display:
-  streaming: false
+  streaming: true
 compression:
   enabled: true
 "@ | Set-Content -Encoding UTF8 $ConfigPath

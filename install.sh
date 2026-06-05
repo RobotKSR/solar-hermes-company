@@ -32,7 +32,7 @@ fi
 
 printf "Installing Headroom into Hermes environment...\n"
 "$HERMES_PY" -m pip install --upgrade pip >/dev/null
-"$HERMES_PY" -m pip install --upgrade "headroom-ai[proxy,mcp]" >/dev/null
+"$HERMES_PY" -m pip install --upgrade "headroom-ai[proxy]" >/dev/null
 
 if [ -z "${LLM_PLATFORM_TOKEN:-}" ]; then
   printf "\nPaste your LLM Platform API token for %s.\n" "$LLM_MODEL"
@@ -62,6 +62,7 @@ updates = {
     "OPENAI_TARGET_API_URL": os.environ["LLM_PUBLIC_BASE_URL"],
     "HEADROOM_PORT": os.environ["HEADROOM_PORT"],
     "HEADROOM_TELEMETRY": "off",
+    "HERMES_STREAM_READ_TIMEOUT": "1800",
     "NO_PROXY": "*",
     "HTTPS_PROXY": "",
     "HTTP_PROXY": "",
@@ -104,10 +105,10 @@ config["model"] = {
 }
 agent = dict(config.get("agent") or {})
 agent["max_tokens"] = int(os.environ.get("HERMES_MAX_TOKENS", "32768"))
-agent["disable_api_streaming"] = True
+agent["disable_api_streaming"] = False
 config["agent"] = agent
 display = dict(config.get("display") or {})
-display["streaming"] = False
+display["streaming"] = True
 config["display"] = display
 compression = dict(config.get("compression") or {})
 compression["enabled"] = True
